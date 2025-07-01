@@ -15,8 +15,7 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Separator } from '@/components/ui/separator';
-import { Collection } from '@/lib/database/types';
-import { CollectionsService } from '@/lib/database/collections';
+import { apiClient, Collection } from '@/lib/api-client';
 
 interface CollectionSelectorProps {
   movieId: number;
@@ -41,22 +40,20 @@ export function CollectionSelector({ movieId, trigger, onSuccess }: CollectionSe
   const loadCollections = async () => {
     setLoading(true);
     try {
-      const userCollections = await CollectionsService.getUserCollections();
+      const userCollections = await apiClient.getCollections();
       setCollections(userCollections);
       
       // Check which collections already contain this movie
-      const collectionPromises = userCollections.map(async (collection) => {
-        const hasMovie = await CollectionsService.isMovieInCollection(collection.id, movieId);
-        return { collectionId: collection.id, hasMovie };
-      });
-      
-      const results = await Promise.all(collectionPromises);
-      const existingCollections = new Set(
-        results.filter(r => r.hasMovie).map(r => r.collectionId)
-      );
+      const existingCollections = new Set<string>();
+      for (const collection of userCollections) {
+        if (collection.movies.includes(movieId)) {
+          existingCollections.add(collection.id);
+        }
+      }
       setSelectedCollections(existingCollections);
     } catch (error) {
       console.error('Failed to load collections:', error);
+      setCollections([]);
     } finally {
       setLoading(false);
     }
@@ -67,17 +64,15 @@ export function CollectionSelector({ movieId, trigger, onSuccess }: CollectionSe
     
     setCreating(true);
     try {
-      const newCollection = await CollectionsService.createCollection({
-        name: newCollectionName.trim(),
-        description: '',
-        is_public: false
-      });
+      const newCollection = await apiClient.createCollection(newCollectionName.trim());
       
-      setCollections(prev => [newCollection, ...prev]);
-      setNewCollectionName('');
-      
-      // Auto-select the new collection
-      setSelectedCollections(prev => new Set([...prev, newCollection.id]));
+      if (newCollection) {
+        setCollections(prev => [newCollection, ...prev]);
+        setNewCollectionName('');
+        
+        // Auto-select the new collection
+        setSelectedCollections(prev => new Set([...prev, newCollection.id]));
+      }
     } catch (error) {
       console.error('Failed to create collection:', error);
     } finally {
@@ -91,7 +86,7 @@ export function CollectionSelector({ movieId, trigger, onSuccess }: CollectionSe
     if (newSelected.has(collectionId)) {
       newSelected.delete(collectionId);
       try {
-        await CollectionsService.removeMovieFromCollection(collectionId, movieId);
+        await apiClient.removeMovieFromCollection(collectionId, movieId);
       } catch (error) {
         console.error('Failed to remove movie from collection:', error);
         return;
@@ -99,7 +94,7 @@ export function CollectionSelector({ movieId, trigger, onSuccess }: CollectionSe
     } else {
       newSelected.add(collectionId);
       try {
-        await CollectionsService.addMovieToCollection(collectionId, movieId);
+        await apiClient.addMovieToCollection(collectionId, movieId);
       } catch (error) {
         console.error('Failed to add movie to collection:', error);
         return;
@@ -188,33 +183,28 @@ export function CollectionSelector({ movieId, trigger, onSuccess }: CollectionSe
                   >
                     <Checkbox
                       checked={selectedCollections.has(collection.id)}
-                      onChange={() => handleToggleCollection(collection.id)}
+                      onCheckedChange={() => handleToggleCollection(collection.id)}
                     />
                     <div className="flex-1 min-w-0">
-                      <h4 className="text-sm font-medium truncate">{collection.name}</h4>
-                      {collection.description && (
-                        <p className="text-xs text-muted-foreground truncate">
-                          {collection.description}
-                        </p>
-                      )}
+                      <p className="text-sm font-medium truncate">{collection.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {collection.movieCount} movies
+                      </p>
                     </div>
                     {selectedCollections.has(collection.id) && (
-                      <Check className="h-4 w-4 text-green-500" />
+                      <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
                     )}
                   </div>
                 ))}
               </div>
             )}
           </div>
-        </div>
 
-        <div className="flex justify-end gap-2 pt-4">
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>
-            Done
-          </Button>
+          <div className="flex justify-end pt-4">
+            <Button onClick={handleSave}>
+              Done
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

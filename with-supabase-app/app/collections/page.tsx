@@ -7,12 +7,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { MovieCollection } from '@/lib/types';
-import { SupabaseMovieStorage } from '@/lib/storage-supabase';
+import { apiClient, Collection } from '@/lib/api-client';
 import { Plus, Folder, Calendar, Share, Trash2 } from 'lucide-react';
 
 export default function CollectionsPage() {
-  const [collections, setCollections] = useState<MovieCollection[]>([]);
+  const [collections, setCollections] = useState<Collection[]>([]);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState('');
   const [newCollectionDescription, setNewCollectionDescription] = useState('');
@@ -22,44 +21,49 @@ export default function CollectionsPage() {
   }, []);
 
   const loadCollections = async () => {
-    const userCollections = await SupabaseMovieStorage.getCollections();
+    const userCollections = await apiClient.getCollections();
     setCollections(userCollections);
   };
 
   const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newCollectionName.trim()) {
-      await SupabaseMovieStorage.createCollection(
+      const collection = await apiClient.createCollection(
         newCollectionName.trim(),
         newCollectionDescription.trim() || undefined
       );
       
-      setNewCollectionName('');
-      setNewCollectionDescription('');
-      setShowCreateForm(false);
-      loadCollections();
+      if (collection) {
+        setNewCollectionName('');
+        setNewCollectionDescription('');
+        setShowCreateForm(false);
+        loadCollections();
+      }
     }
   };
 
   const handleDeleteCollection = async (collectionId: string) => {
     if (confirm('Are you sure you want to delete this collection?')) {
-      await SupabaseMovieStorage.deleteCollection(collectionId);
-      loadCollections();
+      const success = await apiClient.deleteCollection(collectionId);
+      if (success) {
+        loadCollections();
+      }
     }
   };
 
   const handleShareCollection = async (collectionId: string) => {
-    const shareData = await SupabaseMovieStorage.exportCollection(collectionId);
-    if (shareData) {
-      const shareUrl = `${window.location.origin}/collections/shared?data=${shareData}`;
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        alert('Collection link copied to clipboard!');
-      });
+    // Simple share functionality - copy collection URL
+    const shareUrl = `${window.location.origin}/collections/${collectionId}`;
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      alert('Collection link copied to clipboard!');
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
     }
   };
 
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', {
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric'
@@ -193,7 +197,7 @@ export default function CollectionsPage() {
                       <Calendar className="h-4 w-4" />
                       <span>{formatDate(collection.createdAt)}</span>
                     </div>
-                    <span>{collection.movies.length} movies</span>
+                    <span>{collection.movieCount} movies</span>
                   </div>
                   
                   <Link href={`/collections/${collection.id}`}>

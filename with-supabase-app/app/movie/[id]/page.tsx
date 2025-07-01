@@ -24,15 +24,13 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { MovieDetails, CastMember, Video, Movie } from '@/lib/types';
 import { tmdbClient, TMDBClient } from '@/lib/tmdb';
-import { SupabaseMovieStorage } from '@/lib/storage-supabase';
-import { createClient } from '@/lib/supabase/client';
+import { apiClient } from '@/lib/api-client';
 import { CollectionSelector } from '@/components/collection-selector';
 
 export default function MovieDetailPage() {
   const params = useParams();
   const router = useRouter();
   const movieId = parseInt(params.id as string);
-  const supabase = createClient();
 
   const [movie, setMovie] = useState<MovieDetails | null>(null);
   const [cast, setCast] = useState<CastMember[]>([]);
@@ -51,16 +49,12 @@ export default function MovieDetailPage() {
   }, [movieId]);
 
   const checkAuth = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
+    const user = await apiClient.getCurrentUser();
     setIsAuthenticated(!!user);
     
-    if (user && movieId) {
-      try {
-        const favoriteStatus = await SupabaseMovieStorage.isFavorite(movieId);
-        setIsFavorite(favoriteStatus);
-      } catch (error) {
-        console.error('Failed to check favorite status:', error);
-      }
+    if (movieId && user) {
+      const favoriteStatus = await apiClient.isFavorite(movieId);
+      setIsFavorite(favoriteStatus);
     }
   };
 
@@ -93,12 +87,8 @@ export default function MovieDetailPage() {
       return;
     }
 
-    try {
-      const newFavoriteState = await SupabaseMovieStorage.toggleFavorite(movieId);
-      setIsFavorite(newFavoriteState);
-    } catch (error) {
-      console.error('Failed to toggle favorite:', error);
-    }
+    const newFavoriteState = await apiClient.toggleFavorite(movieId);
+    setIsFavorite(newFavoriteState);
   };
 
   const formatRuntime = (minutes: number) => {
@@ -191,74 +181,80 @@ export default function MovieDetailPage() {
 
         {/* Hero Section */}
         <div className="relative mb-12 rounded-2xl overflow-hidden bg-gradient-to-t from-black/80 via-black/40 to-transparent">
-          {movie.backdrop_path && (
-            <div className="absolute inset-0">
-              <Image
-                src={TMDBClient.getBackdropUrl(movie.backdrop_path)}
-                alt={movie.title}
-                fill
-                className="object-cover"
-                priority
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/20" />
-            </div>
-          )}
-          
+          {/* Backdrop Image */}
+          <div className="absolute inset-0 z-0">
+            <Image
+              src={movie.backdrop_path 
+                ? TMDBClient.getBackdropUrl(movie.backdrop_path)
+                : '/placeholder-movie.jpg'
+              }
+              alt={movie.title}
+              fill
+              className="object-cover"
+              priority
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/20" />
+          </div>
+
+          {/* Content */}
           <div className="relative z-10 p-8 lg:p-12">
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-end">
               {/* Movie Poster */}
-              <div className="lg:col-span-2">
-                <div className="relative aspect-[2/3] max-w-sm mx-auto lg:mx-0">
+              <div className="lg:col-span-1">
+                <div className="aspect-[2/3] relative max-w-sm mx-auto lg:mx-0 rounded-xl overflow-hidden shadow-2xl">
                   <Image
-                    src={TMDBClient.getPosterUrl(movie.poster_path)}
+                    src={movie.poster_path 
+                      ? TMDBClient.getPosterUrl(movie.poster_path)
+                      : '/placeholder-movie.jpg'
+                    }
                     alt={movie.title}
                     fill
-                    className="object-cover rounded-xl shadow-2xl ring-1 ring-white/10"
+                    className="object-cover"
                   />
                 </div>
               </div>
 
-              {/* Movie Details */}
-              <div className="lg:col-span-3 text-white space-y-6">
-                <div className="space-y-4">
-                  <h1 className="text-4xl lg:text-6xl font-bold leading-tight">
+              {/* Movie Info */}
+              <div className="lg:col-span-2 text-white space-y-6">
+                <div>
+                  <h1 className="text-4xl lg:text-6xl font-bold mb-4 leading-tight">
                     {movie.title}
                   </h1>
+                  
                   {movie.tagline && (
-                    <p className="text-xl lg:text-2xl text-gray-300 italic font-light">
+                    <p className="text-xl text-white/90 italic mb-4">
                       "{movie.tagline}"
                     </p>
                   )}
-                </div>
 
-                {/* Movie Metadata */}
-                <div className="flex flex-wrap gap-6 text-sm lg:text-base">
-                  <div className="flex items-center space-x-2">
-                    <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-                    <span className="font-semibold">{movie.vote_average.toFixed(1)}</span>
-                    <span className="text-gray-300">({movie.vote_count.toLocaleString()})</span>
+                  <div className="flex flex-wrap items-center gap-4 text-sm">
+                    <div className="flex items-center space-x-1">
+                      <Star className="h-4 w-4 text-yellow-400 fill-current" />
+                      <span className="font-medium">{movie.vote_average.toFixed(1)}</span>
+                      <span className="text-white/70">({movie.vote_count.toLocaleString()} votes)</span>
+                    </div>
+                    
+                    <div className="flex items-center space-x-1">
+                      <Calendar className="h-4 w-4" />
+                      <span>{new Date(movie.release_date).getFullYear()}</span>
+                    </div>
+                    
+                    {movie.runtime && (
+                      <div className="flex items-center space-x-1">
+                        <Clock className="h-4 w-4" />
+                        <span>{formatRuntime(movie.runtime)}</span>
+                      </div>
+                    )}
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Calendar className="h-5 w-5" />
-                    <span>{new Date(movie.release_date).getFullYear()}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Clock className="h-5 w-5" />
-                    <span>{formatRuntime(movie.runtime)}</span>
-                  </div>
-                </div>
 
-                {/* Genres */}
-                <div className="flex flex-wrap gap-2">
-                  {movie.genres?.map((genre) => (
-                    <Badge 
-                      key={genre.id} 
-                      variant="secondary" 
-                      className="bg-white/20 text-white border-white/30 hover:bg-white/30"
-                    >
-                      {genre.name}
-                    </Badge>
-                  ))}
+                  {/* Genres */}
+                  <div className="flex flex-wrap gap-2 mt-4">
+                    {movie.genres?.map(genre => (
+                      <Badge key={genre.id} variant="secondary" className="bg-white/20 text-white border-white/30">
+                        {genre.name}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Action Buttons */}
@@ -432,12 +428,12 @@ export default function MovieDetailPage() {
                       <div key={company.id} className="flex items-center space-x-3">
                         {company.logo_path && (
                           <div className="relative w-8 h-8 flex-shrink-0">
-                                                       <Image
-                               src={TMDBClient.getImageUrl(company.logo_path, 'w92')}
-                               alt={company.name}
-                               fill
-                               className="object-contain"
-                             />
+                            <Image
+                              src={TMDBClient.getImageUrl(company.logo_path, 'w92')}
+                              alt={company.name}
+                              fill
+                              className="object-contain"
+                            />
                           </div>
                         )}
                         <span className="text-sm">{company.name}</span>
@@ -464,14 +460,6 @@ export default function MovieDetailPage() {
                 allowFullScreen
                 allow="autoplay"
               />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="absolute -top-12 -right-2 text-white hover:bg-white/20"
-                onClick={() => setShowTrailer(false)}
-              >
-                ✕
-              </Button>
             </div>
           </div>
         )}
