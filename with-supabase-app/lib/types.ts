@@ -47,6 +47,7 @@ export interface Video {
   official: boolean;
 }
 
+// Legacy interface for backward compatibility - use database types instead
 export interface MovieCollection {
   id: string;
   name: string;
@@ -55,6 +56,15 @@ export interface MovieCollection {
   createdAt: Date;
   isPublic?: boolean;
 }
+
+// Re-export database types for new usage
+export type {
+  Collection as DatabaseCollection,
+  CollectionWithMovieCount,
+  CollectionWithMovies,
+  UserFavorite,
+  CollectionMovie
+} from './database/types';
 
 export interface TMDBResponse<T> {
   page: number;

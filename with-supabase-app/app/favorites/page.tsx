@@ -5,7 +5,7 @@ import { Navigation } from '@/components/navigation';
 import { MovieGrid } from '@/components/movie-grid';
 import { Movie } from '@/lib/types';
 import { tmdbClient } from '@/lib/tmdb';
-import { MovieStorage } from '@/lib/storage';
+import { SupabaseMovieStorage } from '@/lib/storage-supabase';
 import { Heart } from 'lucide-react';
 
 export default function FavoritesPage() {
@@ -19,7 +19,7 @@ export default function FavoritesPage() {
   const loadFavoriteMovies = async () => {
     setLoading(true);
     try {
-      const favoriteIds = MovieStorage.getFavorites();
+      const favoriteIds = await SupabaseMovieStorage.getFavorites();
       
       if (favoriteIds.length === 0) {
         setFavoriteMovies([]);

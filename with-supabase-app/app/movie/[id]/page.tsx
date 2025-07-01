@@ -3,40 +3,70 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { ArrowLeft, Star, Calendar, Clock, Heart, Play, Users, Eye, EyeOff } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  Star, 
+  Calendar, 
+  Clock, 
+  Heart, 
+  Play, 
+  Plus,
+  ExternalLink,
+  DollarSign,
+  Globe,
+  BookmarkPlus
+} from 'lucide-react';
 import { Navigation } from '@/components/navigation';
 import { MovieCard } from '@/components/movie-card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { MovieDetails, CastMember, Video } from '@/lib/types';
-import { tmdbClient } from '@/lib/tmdb';
-import { MovieStorage } from '@/lib/storage';
+import { Card, CardContent } from '@/components/ui/card';
+import { Separator } from '@/components/ui/separator';
+import { MovieDetails, CastMember, Video, Movie } from '@/lib/types';
+import { tmdbClient, TMDBClient } from '@/lib/tmdb';
+import { SupabaseMovieStorage } from '@/lib/storage-supabase';
+import { createClient } from '@/lib/supabase/client';
+import { CollectionSelector } from '@/components/collection-selector';
 
 export default function MovieDetailPage() {
   const params = useParams();
   const router = useRouter();
   const movieId = parseInt(params.id as string);
+  const supabase = createClient();
 
   const [movie, setMovie] = useState<MovieDetails | null>(null);
   const [cast, setCast] = useState<CastMember[]>([]);
   const [videos, setVideos] = useState<Video[]>([]);
-  const [similarMovies, setSimilarMovies] = useState<any[]>([]);
+  const [similarMovies, setSimilarMovies] = useState<Movie[]>([]);
   const [loading, setLoading] = useState(true);
   const [isFavorite, setIsFavorite] = useState(false);
-  const [showSpoilers, setShowSpoilers] = useState(false);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [showTrailer, setShowTrailer] = useState(false);
 
   useEffect(() => {
+    checkAuth();
     if (movieId) {
       loadMovieDetails();
-      setIsFavorite(MovieStorage.isFavorite(movieId));
     }
   }, [movieId]);
+
+  const checkAuth = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    setIsAuthenticated(!!user);
+    
+    if (user && movieId) {
+      try {
+        const favoriteStatus = await SupabaseMovieStorage.isFavorite(movieId);
+        setIsFavorite(favoriteStatus);
+      } catch (error) {
+        console.error('Failed to check favorite status:', error);
+      }
+    }
+  };
 
   const loadMovieDetails = async () => {
     setLoading(true);
     try {
-      // Load movie details, credits, videos, and similar movies in parallel
       const [movieData, creditsData, videosData, similarData] = await Promise.all([
         tmdbClient.getMovieDetails(movieId),
         tmdbClient.getMovieCredits(movieId),
@@ -45,9 +75,11 @@ export default function MovieDetailPage() {
       ]);
 
       setMovie(movieData);
-      setCast(creditsData.cast.slice(0, 12)); // Show first 12 cast members
-      setVideos(videosData.results.filter(video => video.type === 'Trailer' || video.type === 'Teaser'));
-      setSimilarMovies(similarData.results.slice(0, 12));
+      setCast(creditsData.cast.slice(0, 8));
+      setVideos(videosData.results.filter(video => 
+        video.type === 'Trailer' || video.type === 'Teaser'
+      ));
+      setSimilarMovies(similarData.results.slice(0, 8));
     } catch (error) {
       console.error('Failed to load movie details:', error);
     } finally {
@@ -55,9 +87,18 @@ export default function MovieDetailPage() {
     }
   };
 
-  const handleFavoriteToggle = () => {
-    const newFavoriteState = MovieStorage.toggleFavorite(movieId);
-    setIsFavorite(newFavoriteState);
+  const handleFavoriteToggle = async () => {
+    if (!isAuthenticated) {
+      router.push('/auth/login');
+      return;
+    }
+
+    try {
+      const newFavoriteState = await SupabaseMovieStorage.toggleFavorite(movieId);
+      setIsFavorite(newFavoriteState);
+    } catch (error) {
+      console.error('Failed to toggle favorite:', error);
+    }
   };
 
   const formatRuntime = (minutes: number) => {
@@ -69,11 +110,13 @@ export default function MovieDetailPage() {
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD'
+      currency: 'USD',
+      notation: 'compact',
+      maximumFractionDigits: 1
     }).format(amount);
   };
 
-  const getTrailerVideo = () => {
+  const getMainTrailer = () => {
     return videos.find(video => video.type === 'Trailer') || videos[0];
   };
 
@@ -82,19 +125,24 @@ export default function MovieDetailPage() {
       <div className="min-h-screen bg-background">
         <Navigation />
         <div className="container mx-auto px-4 py-8">
-          <div className="animate-pulse space-y-8">
-            <div className="h-8 bg-muted rounded w-32" />
-            <div className="grid md:grid-cols-3 gap-8">
-              <div className="md:col-span-1">
-                <div className="aspect-[2/3] bg-muted rounded-lg" />
-              </div>
-              <div className="md:col-span-2 space-y-4">
-                <div className="h-10 bg-muted rounded" />
-                <div className="h-6 bg-muted rounded w-3/4" />
+          <div className="animate-pulse">
+            <div className="h-8 bg-muted rounded w-32 mb-8" />
+            <div className="relative h-[600px] bg-muted rounded-xl mb-8" />
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              <div className="lg:col-span-2 space-y-6">
+                <div className="h-6 bg-muted rounded w-20" />
                 <div className="space-y-2">
                   <div className="h-4 bg-muted rounded" />
                   <div className="h-4 bg-muted rounded" />
-                  <div className="h-4 bg-muted rounded w-2/3" />
+                  <div className="h-4 bg-muted rounded w-3/4" />
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="h-6 bg-muted rounded w-24" />
+                <div className="grid grid-cols-4 gap-4">
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="aspect-[2/3] bg-muted rounded" />
+                  ))}
                 </div>
               </div>
             </div>
@@ -109,9 +157,12 @@ export default function MovieDetailPage() {
       <div className="min-h-screen bg-background">
         <Navigation />
         <div className="container mx-auto px-4 py-8">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold mb-4">Movie Not Found</h1>
-            <Button onClick={() => router.back()}>
+          <div className="flex flex-col items-center justify-center h-96 text-center">
+            <h1 className="text-3xl font-bold mb-4">Movie Not Found</h1>
+            <p className="text-muted-foreground mb-6">
+              The movie you're looking for doesn't exist or has been removed.
+            </p>
+            <Button onClick={() => router.back()} size="lg">
               <ArrowLeft className="h-4 w-4 mr-2" />
               Go Back
             </Button>
@@ -120,6 +171,8 @@ export default function MovieDetailPage() {
       </div>
     );
   }
+
+  const mainTrailer = getMainTrailer();
 
   return (
     <div className="min-h-screen bg-background">
@@ -130,98 +183,124 @@ export default function MovieDetailPage() {
         <Button
           variant="ghost"
           onClick={() => router.back()}
-          className="mb-6"
+          className="mb-8 hover:bg-muted/80"
         >
           <ArrowLeft className="h-4 w-4 mr-2" />
-          Back
+          Back to Movies
         </Button>
 
-        {/* Hero Section with Backdrop */}
-        <div className="relative mb-8 rounded-lg overflow-hidden">
+        {/* Hero Section */}
+        <div className="relative mb-12 rounded-2xl overflow-hidden bg-gradient-to-t from-black/80 via-black/40 to-transparent">
           {movie.backdrop_path && (
             <div className="absolute inset-0">
               <Image
-                src={tmdbClient.getBackdropUrl(movie.backdrop_path)}
+                src={TMDBClient.getBackdropUrl(movie.backdrop_path)}
                 alt={movie.title}
                 fill
                 className="object-cover"
+                priority
               />
-              <div className="absolute inset-0 bg-black/60" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/60 to-black/20" />
             </div>
           )}
           
-          <div className="relative z-10 p-8 text-white">
-            <div className="grid md:grid-cols-3 gap-8">
+          <div className="relative z-10 p-8 lg:p-12">
+            <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 lg:gap-12">
               {/* Movie Poster */}
-              <div className="md:col-span-1">
-                <div className="relative aspect-[2/3] max-w-sm mx-auto">
+              <div className="lg:col-span-2">
+                <div className="relative aspect-[2/3] max-w-sm mx-auto lg:mx-0">
                   <Image
-                    src={tmdbClient.getPosterUrl(movie.poster_path)}
+                    src={TMDBClient.getPosterUrl(movie.poster_path)}
                     alt={movie.title}
                     fill
-                    className="object-cover rounded-lg shadow-lg"
+                    className="object-cover rounded-xl shadow-2xl ring-1 ring-white/10"
                   />
                 </div>
               </div>
 
-              {/* Movie Info */}
-              <div className="md:col-span-2 space-y-4">
-                <div>
-                  <h1 className="text-4xl font-bold mb-2">{movie.title}</h1>
+              {/* Movie Details */}
+              <div className="lg:col-span-3 text-white space-y-6">
+                <div className="space-y-4">
+                  <h1 className="text-4xl lg:text-6xl font-bold leading-tight">
+                    {movie.title}
+                  </h1>
                   {movie.tagline && (
-                    <p className="text-xl text-gray-300 italic">"{movie.tagline}"</p>
+                    <p className="text-xl lg:text-2xl text-gray-300 italic font-light">
+                      "{movie.tagline}"
+                    </p>
                   )}
                 </div>
 
-                {/* Movie Stats */}
-                <div className="flex flex-wrap gap-4 text-sm">
-                  <div className="flex items-center space-x-1">
-                    <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                    <span>{movie.vote_average.toFixed(1)}/10</span>
-                    <span className="text-gray-300">({movie.vote_count} votes)</span>
+                {/* Movie Metadata */}
+                <div className="flex flex-wrap gap-6 text-sm lg:text-base">
+                  <div className="flex items-center space-x-2">
+                    <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
+                    <span className="font-semibold">{movie.vote_average.toFixed(1)}</span>
+                    <span className="text-gray-300">({movie.vote_count.toLocaleString()})</span>
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <Calendar className="h-4 w-4" />
+                  <div className="flex items-center space-x-2">
+                    <Calendar className="h-5 w-5" />
                     <span>{new Date(movie.release_date).getFullYear()}</span>
                   </div>
-                  <div className="flex items-center space-x-1">
-                    <Clock className="h-4 w-4" />
+                  <div className="flex items-center space-x-2">
+                    <Clock className="h-5 w-5" />
                     <span>{formatRuntime(movie.runtime)}</span>
                   </div>
                 </div>
 
                 {/* Genres */}
                 <div className="flex flex-wrap gap-2">
-                  {movie.genres.map((genre) => (
-                    <Badge key={genre.id} variant="secondary">
+                  {movie.genres?.map((genre) => (
+                    <Badge 
+                      key={genre.id} 
+                      variant="secondary" 
+                      className="bg-white/20 text-white border-white/30 hover:bg-white/30"
+                    >
                       {genre.name}
                     </Badge>
                   ))}
                 </div>
 
                 {/* Action Buttons */}
-                <div className="flex gap-3">
-                  <Button
-                    onClick={handleFavoriteToggle}
-                    variant={isFavorite ? "default" : "outline"}
-                    className="flex items-center space-x-2"
-                  >
-                    <Heart className={`h-4 w-4 ${isFavorite ? 'fill-current' : ''}`} />
-                    <span>{isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}</span>
-                  </Button>
-                  
-                  {getTrailerVideo() && (
-                    <Button variant="outline" asChild>
-                      <a
-                        href={`https://www.youtube.com/watch?v=${getTrailerVideo()?.key}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center space-x-2"
-                      >
-                        <Play className="h-4 w-4" />
-                        <span>Watch Trailer</span>
-                      </a>
+                <div className="flex flex-wrap gap-4 pt-4">
+                  {mainTrailer && (
+                    <Button 
+                      size="lg" 
+                      className="bg-red-600 hover:bg-red-700 text-white"
+                      onClick={() => setShowTrailer(true)}
+                    >
+                      <Play className="h-5 w-5 mr-2" />
+                      Watch Trailer
                     </Button>
+                  )}
+                  
+                  <Button
+                    size="lg"
+                    variant={isFavorite ? "default" : "outline"}
+                    onClick={handleFavoriteToggle}
+                    className={isFavorite 
+                      ? "bg-red-600 hover:bg-red-700 text-white" 
+                      : "border-white/50 text-white hover:bg-white/10"
+                    }
+                  >
+                    <Heart className={`h-5 w-5 mr-2 ${isFavorite ? 'fill-current' : ''}`} />
+                    {isFavorite ? 'Favorited' : 'Add to Favorites'}
+                  </Button>
+
+                  {isAuthenticated && (
+                    <CollectionSelector
+                      movieId={movieId}
+                      trigger={
+                        <Button
+                          size="lg"
+                          variant="outline"
+                          className="border-white/50 text-white hover:bg-white/10"
+                        >
+                          <BookmarkPlus className="h-5 w-5 mr-2" />
+                          Add to Collection
+                        </Button>
+                      }
+                    />
                   )}
                 </div>
               </div>
@@ -229,125 +308,170 @@ export default function MovieDetailPage() {
           </div>
         </div>
 
-        {/* Overview Section */}
-        <Card className="mb-8">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <CardTitle>Overview</CardTitle>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowSpoilers(!showSpoilers)}
-                className="flex items-center space-x-2"
-              >
-                {showSpoilers ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                <span>{showSpoilers ? 'Hide Spoilers' : 'Show Spoilers'}</span>
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-muted-foreground leading-relaxed">
-              {showSpoilers && movie.spoiler_overview ? movie.spoiler_overview : movie.overview}
-            </p>
-            {!showSpoilers && movie.spoiler_overview && (
-              <p className="text-sm text-muted-foreground mt-2 italic">
-                Click "Show Spoilers" for a more detailed synopsis.
+        {/* Content Sections */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-12">
+            {/* Overview */}
+            <section>
+              <h2 className="text-2xl font-bold mb-4">Overview</h2>
+              <p className="text-muted-foreground leading-relaxed text-lg">
+                {movie.overview}
               </p>
-            )}
-          </CardContent>
-        </Card>
+            </section>
 
-        {/* Cast Section */}
-        {cast.length > 0 && (
-          <Card className="mb-8">
-            <CardHeader>
-              <CardTitle className="flex items-center space-x-2">
-                <Users className="h-5 w-5" />
-                <span>Cast</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-                {cast.map((member) => (
-                  <div key={member.id} className="text-center">
-                    <div className="relative aspect-[2/3] mb-2 rounded-lg overflow-hidden bg-muted">
-                      {member.profile_path ? (
-                        <Image
-                          src={tmdbClient.getProfileUrl(member.profile_path)}
-                          alt={member.name}
-                          fill
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <Users className="h-8 w-8 text-muted-foreground" />
+            {/* Cast */}
+            {cast.length > 0 && (
+              <section>
+                <h2 className="text-2xl font-bold mb-6">Cast</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {cast.map((member) => (
+                    <Card key={member.id} className="group hover:shadow-lg transition-shadow">
+                      <CardContent className="p-4">
+                        <div className="aspect-[2/3] relative mb-3 overflow-hidden rounded-lg">
+                          <Image
+                            src={member.profile_path 
+                              ? TMDBClient.getProfileUrl(member.profile_path)
+                              : '/placeholder-movie.jpg'
+                            }
+                            alt={member.name}
+                            fill
+                            className="object-cover group-hover:scale-105 transition-transform"
+                          />
                         </div>
-                      )}
+                        <h3 className="font-semibold text-sm truncate">{member.name}</h3>
+                        <p className="text-xs text-muted-foreground truncate">{member.character}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </section>
+            )}
+
+            {/* Similar Movies */}
+            {similarMovies.length > 0 && (
+              <section>
+                <h2 className="text-2xl font-bold mb-6">Similar Movies</h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {similarMovies.map((similarMovie) => (
+                    <MovieCard 
+                      key={similarMovie.id} 
+                      movie={similarMovie}
+                      className="hover:scale-105 transition-transform"
+                    />
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-8">
+            {/* Movie Facts */}
+            <Card>
+              <CardContent className="p-6">
+                <h3 className="text-lg font-semibold mb-4">Movie Facts</h3>
+                <div className="space-y-4">
+                  {movie.budget > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground flex items-center">
+                        <DollarSign className="h-4 w-4 mr-2" />
+                        Budget
+                      </span>
+                      <span className="font-medium">{formatCurrency(movie.budget)}</span>
                     </div>
-                    <h4 className="font-semibold text-sm">{member.name}</h4>
-                    <p className="text-xs text-muted-foreground">{member.character}</p>
+                  )}
+                  
+                  {movie.revenue > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground flex items-center">
+                        <DollarSign className="h-4 w-4 mr-2" />
+                        Revenue
+                      </span>
+                      <span className="font-medium">{formatCurrency(movie.revenue)}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground flex items-center">
+                      <Globe className="h-4 w-4 mr-2" />
+                      Language
+                    </span>
+                    <span className="font-medium uppercase">{movie.original_language}</span>
                   </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
-        {/* Movie Details */}
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>Details</CardTitle>
-          </CardHeader>
-          <CardContent className="grid md:grid-cols-2 gap-4 text-sm">
-            <div>
-              <h4 className="font-semibold mb-2">Production</h4>
-              <div className="space-y-1 text-muted-foreground">
-                <p><span className="font-medium">Status:</span> {movie.status}</p>
-                <p><span className="font-medium">Original Language:</span> {movie.original_language.toUpperCase()}</p>
-                {movie.budget > 0 && (
-                  <p><span className="font-medium">Budget:</span> {formatCurrency(movie.budget)}</p>
-                )}
-                {movie.revenue > 0 && (
-                  <p><span className="font-medium">Revenue:</span> {formatCurrency(movie.revenue)}</p>
-                )}
-              </div>
-            </div>
-            <div>
-              <h4 className="font-semibold mb-2">External Links</h4>
-              <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-muted-foreground">Status</span>
+                    <span className="font-medium">{movie.status}</span>
+                  </div>
+                </div>
+
                 {movie.homepage && (
-                  <a
-                    href={movie.homepage}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-primary hover:underline"
-                  >
-                    Official Website
-                  </a>
+                  <>
+                    <Separator className="my-4" />
+                    <Button 
+                      variant="outline" 
+                      className="w-full"
+                      onClick={() => window.open(movie.homepage, '_blank')}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" />
+                      Official Website
+                    </Button>
+                  </>
                 )}
-                {movie.imdb_id && (
-                  <a
-                    href={`https://www.imdb.com/title/${movie.imdb_id}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="block text-primary hover:underline"
-                  >
-                    IMDb Page
-                  </a>
-                )}
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              </CardContent>
+            </Card>
 
-        {/* Similar Movies */}
-        {similarMovies.length > 0 && (
-          <div>
-            <h2 className="text-2xl font-bold mb-6">Similar Movies</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-              {similarMovies.map((similarMovie) => (
-                <MovieCard key={similarMovie.id} movie={similarMovie} showGenres={false} />
-              ))}
+            {/* Production Companies */}
+            {movie.production_companies && movie.production_companies.length > 0 && (
+              <Card>
+                <CardContent className="p-6">
+                  <h3 className="text-lg font-semibold mb-4">Production</h3>
+                  <div className="space-y-3">
+                    {movie.production_companies.slice(0, 5).map((company) => (
+                      <div key={company.id} className="flex items-center space-x-3">
+                        {company.logo_path && (
+                          <div className="relative w-8 h-8 flex-shrink-0">
+                                                       <Image
+                               src={TMDBClient.getImageUrl(company.logo_path, 'w92')}
+                               alt={company.name}
+                               fill
+                               className="object-contain"
+                             />
+                          </div>
+                        )}
+                        <span className="text-sm">{company.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </div>
+
+        {/* Trailer Modal */}
+        {showTrailer && mainTrailer && (
+          <div 
+            className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4"
+            onClick={() => setShowTrailer(false)}
+          >
+            <div className="relative w-full max-w-4xl aspect-video">
+              <iframe
+                src={`https://www.youtube.com/embed/${mainTrailer.key}?autoplay=1`}
+                title={mainTrailer.name}
+                className="w-full h-full rounded-lg"
+                allowFullScreen
+                allow="autoplay"
+              />
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute -top-12 -right-2 text-white hover:bg-white/20"
+                onClick={() => setShowTrailer(false)}
+              >
+                ✕
+              </Button>
             </div>
           </div>
         )}

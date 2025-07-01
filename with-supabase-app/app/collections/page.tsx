@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { MovieCollection } from '@/lib/types';
-import { MovieStorage } from '@/lib/storage';
+import { SupabaseMovieStorage } from '@/lib/storage-supabase';
 import { Plus, Folder, Calendar, Share, Trash2 } from 'lucide-react';
 
 export default function CollectionsPage() {
@@ -21,15 +21,15 @@ export default function CollectionsPage() {
     loadCollections();
   }, []);
 
-  const loadCollections = () => {
-    const userCollections = MovieStorage.getCollections();
+  const loadCollections = async () => {
+    const userCollections = await SupabaseMovieStorage.getCollections();
     setCollections(userCollections);
   };
 
-  const handleCreateCollection = (e: React.FormEvent) => {
+  const handleCreateCollection = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newCollectionName.trim()) {
-      MovieStorage.createCollection(
+      await SupabaseMovieStorage.createCollection(
         newCollectionName.trim(),
         newCollectionDescription.trim() || undefined
       );
@@ -41,15 +41,15 @@ export default function CollectionsPage() {
     }
   };
 
-  const handleDeleteCollection = (collectionId: string) => {
+  const handleDeleteCollection = async (collectionId: string) => {
     if (confirm('Are you sure you want to delete this collection?')) {
-      MovieStorage.deleteCollection(collectionId);
+      await SupabaseMovieStorage.deleteCollection(collectionId);
       loadCollections();
     }
   };
 
-  const handleShareCollection = (collectionId: string) => {
-    const shareData = MovieStorage.exportCollection(collectionId);
+  const handleShareCollection = async (collectionId: string) => {
+    const shareData = await SupabaseMovieStorage.exportCollection(collectionId);
     if (shareData) {
       const shareUrl = `${window.location.origin}/collections/shared?data=${shareData}`;
       navigator.clipboard.writeText(shareUrl).then(() => {
